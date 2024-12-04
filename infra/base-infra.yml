@@ -1,0 +1,475 @@
+AWSTemplateFormatVersion: "2010-09-09"
+Description: CloudFormation template for the DOP305 - Modern CI/CD with GitHub and AWS CodePipeline workshop
+
+Resources:
+  CodeBuildBackEndRole:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Warning is not needed for this workshop because only one role of this type.
+          - id: W11
+            reason: cloudformation:ValidateTemplate only support * in its resources
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /service-role/
+      RoleName: CodeBuildBackEndRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildBackEndRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                  - logs:PutRetentionPolicy
+                Resource:
+                  - 'arn:aws:logs:*:*:log-group:/aws/codebuild/*'
+                  - 'arn:aws:logs:*:*:log-group:/aws/codebuild/*:log-stream:*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*/*
+                Condition:
+                  StringEquals:
+                    aws:PrincipalAccount: !Sub ${AWS::AccountId}
+              - Effect: Allow
+                Action:
+                  - cloudformation:CreateChangeSet
+                  - cloudformation:CreateStack
+                  - cloudformation:DeleteStack
+                  - cloudformation:DescribeChangeSet
+                  - cloudformation:DescribeStackEvents
+                  - cloudformation:ExecuteChangeSet
+                  - cloudformation:GetTemplate
+                  - cloudformation:ListStackResources
+                  - cloudformation:UpdateStack
+                  - cloudformation:DescribeStacks
+                  - cloudformation:GetTemplateSummary
+                Resource: 
+                  - !Sub 'arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack*'
+              - Effect: Allow
+                Action:
+                  - cloudformation:ValidateTemplate
+                Resource: 
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - dynamodb:CreateTable
+                  - dynamodb:DeleteTable
+                  - dynamodb:DescribeTable
+                  - dynamodb:UpdateTable
+                  - dynamodb:ListTables
+                  - dynamodb:TagResource
+                  - dynamodb:UntagResource
+                  - dynamodb:ListTagsOfResource
+                  - dynamodb:GetResourcePolicy
+                  - dynamodb:DescribeKinesisStreamingDestination
+                  - dynamodb:DescribeContributorInsights
+                  - dynamodb:DescribeContinuousBackups
+                  - dynamodb:DescribeTimeToLive
+                Resource: !Sub 'arn:aws:dynamodb:${AWS::Region}:${AWS::AccountId}:table/Rooms-BaseInfraStack-*'
+              - Effect: Allow
+                Action:
+                  - iam:CreateRole
+                  - iam:DeleteRole
+                  - iam:GetRole
+                  - iam:UpdateRole
+                  - iam:AttachRolePolicy
+                  - iam:DetachRolePolicy
+                  - iam:PutRolePolicy
+                  - iam:DeleteRolePolicy
+                  - iam:ListRolePolicies
+                  - iam:ListAttachedRolePolicies
+                  - iam:TagRole
+                  - iam:UntagRole
+                  - iam:GetRolePolicy
+                  - iam:PassRole
+                  - iam:CreateServiceLinkedRole
+                Resource: 
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/AppRunnerHotelAppRole-BaseInfraStack-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/AppRunnerHotelAppECRAccessRole-BaseInfraStack-*"
+                  - !Sub "arn:aws:iam::${AWS::AccountId}:role/aws-service-role/apprunner.amazonaws.com/AWSServiceRoleForAppRunner"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:PutMetricAlarm
+                  - cloudwatch:DeleteAlarms
+                  - cloudwatch:DescribeAlarms
+                Resource: 
+                  - !Sub "arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:alarm:HighReadCapacityAlarm-BaseInfraStack-*"
+              - Effect: Allow
+                Action:
+                  - apprunner:CreateService
+                  - apprunner:DeleteService
+                  - apprunner:DescribeService
+                  - apprunner:ListOperations
+                  - apprunner:ListServices
+                  - apprunner:StartDeployment
+                  - apprunner:TagResource
+                  - apprunner:UntagResource
+                  - apprunner:UpdateService
+                Resource: !Sub "arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*"
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                  - ssm:RemoveTagsFromResource
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*'
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                  - ecr:BatchGetImage
+                  - ecr:GetDownloadUrlForLayer
+                  - ecr:DescribeRepositories
+                  - ecr:ListImages
+                Resource:
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}*"
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/hotel-app"
+              - Effect: Allow
+                Action:
+                  - codeconnections:GetConnection
+                  - codeconnections:GetConnectionToken
+                Resource: 
+                  - !Sub 'arn:aws:codeconnections:${AWS::Region}:${AWS::AccountId}:connection/*'
+
+  CodeBuildIntTestRole:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Warning is not needed for this workshop because only one role of this type.
+          - id: W11
+            reason: Devicefarm ARN of Project is not known at the time of role creation - grid url is time bound also.
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /service-role/
+      RoleName: CodeBuildIntTestRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildBIntTestRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - 'arn:aws:logs:*:*:log-group:/aws/codebuild/*'
+                  - 'arn:aws:logs:*:*:log-group:/aws/codebuild/*:log-stream:*'
+              - Effect: Allow
+                Action:
+                  - devicefarm:CreateTestGridUrl
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
+                  - codebuild:BatchPutCodeCoverages
+                Resource:
+                  - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/*
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*/*
+                Condition:
+                  StringEquals:
+                    aws:PrincipalAccount: !Sub ${AWS::AccountId}
+
+  CodePipelineRole:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Warning is not needed for this workshop because only one role of this type.
+          - id: W76
+            reason: Warning is not needed for this workshop as this is not a role used by customers or public facing content.
+          - id: W11
+            reason: KMS * resource for decrypt is an acceptable pattern.
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /service-role/
+      RoleName: CodePipelineRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codepipeline.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodePipelineRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Action:
+                  - 'iam:PassRole'
+                Resource: 
+                  - !GetAtt CodeBuildBackEndRole.Arn
+                  - !GetAtt CodeBuildIntTestRole.Arn
+                  - !GetAtt CodeBuildFrontEndRole.Arn
+                Effect: Allow
+              - Action:
+                  - codestar-connections:UseConnection
+                  - codeconnections:UseConnection
+                Resource: 
+                  - !Sub 'arn:aws:codeconnections:${AWS::Region}:${AWS::AccountId}:connection/*'
+                Effect: Allow
+              - Action:
+                  - 'codebuild:BatchGetBuilds'
+                  - 'codebuild:StartBuild'
+                  - 'codebuild:BatchGetBuildBatches'
+                  - 'codebuild:StartBuildBatch'
+                Resource:
+                  - !Sub 'arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:project/*'
+                Effect: Allow
+              - Effect: Allow
+                Action:
+                  - 'logs:CreateLogGroup'
+                  - 'logs:CreateLogStream'
+                  - 'logs:PutLogEvents'
+                Resource:
+                  - 'arn:aws:logs:*:*:log-group:/aws/codepipeline/*'
+                  - 'arn:aws:logs:*:*:log-group:/aws/codepipeline/*:log-stream:*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                  - kms:GenerateDataKey
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - s3:AbortMultipartUpload
+                  - s3:CompleteMultipartUpload
+                  - s3:CreateMultipartUpload
+                  - s3:DeleteObject
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:HeadObject
+                  - s3:ListBucket
+                  - s3:PutObject
+                  - s3:UploadPart
+                Resource:
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*/*
+                Condition:
+                  StringEquals:
+                    aws:PrincipalAccount: !Sub ${AWS::AccountId}
+              - Effect: Allow
+                Action:
+                  - apprunner:CreateService
+                  - apprunner:DeleteService
+                  - apprunner:DescribeService
+                  - apprunner:ListOperations
+                  - apprunner:ListServices
+                  - apprunner:StartDeployment
+                  - apprunner:TagResource
+                  - apprunner:UntagResource
+                  - apprunner:UpdateService
+                Resource: !Sub "arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*"
+              - Effect: Allow
+                Action:
+                  - cloudwatch:DescribeAlarms
+                Resource:
+                  - !Sub 'arn:aws:cloudwatch:${AWS::Region}:${AWS::AccountId}:*'
+
+  CodeBuildFrontEndRole:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W28
+            reason: Warning is not needed for this workshop because only one role of this type.
+          - id: W11
+            reason: ecr:GetAuthorizationToken only supports * for its action execution
+    Type: AWS::IAM::Role
+    Properties:
+      Path: /service-role/
+      RoleName: CodeBuildFrontEndRole
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: codebuild.amazonaws.com
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: CodeBuildFrontEndRolePolicy
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - logs:CreateLogGroup
+                  - logs:CreateLogStream
+                  - logs:PutLogEvents
+                Resource:
+                  - 'arn:aws:logs:*:*:log-group:/aws/codebuild/*'
+                  - 'arn:aws:logs:*:*:log-group:/aws/codebuild/*:log-stream:*'
+              - Effect: Allow
+                Action:
+                  - apprunner:CreateService
+                  - apprunner:DeleteService
+                  - apprunner:DescribeService
+                  - apprunner:ListOperations
+                  - apprunner:ListServices
+                  - apprunner:StartDeployment
+                  - apprunner:TagResource
+                  - apprunner:UntagResource
+                  - apprunner:UpdateService
+                Resource: !Sub "arn:aws:apprunner:${AWS::Region}:${AWS::AccountId}:service/*"
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:GetObjectVersion
+                  - s3:GetBucketAcl
+                  - s3:GetBucketLocation
+                Resource:
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*
+                  - !Sub arn:aws:s3:::codepipeline-${AWS::Region}-*/*
+                Condition:
+                  StringEquals:
+                    aws:PrincipalAccount: !Sub ${AWS::AccountId}
+              - Effect: Allow
+                Action:
+                  - codebuild:CreateReportGroup
+                  - codebuild:CreateReport
+                  - codebuild:UpdateReport
+                  - codebuild:BatchPutTestCases
+                  - codebuild:BatchPutCodeCoverages
+                Resource:
+                  - !Sub arn:aws:codebuild:${AWS::Region}:${AWS::AccountId}:report-group/*
+              - Effect: Allow
+                Action:
+                  - ecr:GetAuthorizationToken
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - ecr:BatchCheckLayerAvailability
+                  - ecr:CompleteLayerUpload
+                  - ecr:CreateRepository
+                  - ecr:DescribeImages
+                  - ecr:DescribeRepositories
+                  - ecr:InitiateLayerUpload
+                  - ecr:PutImage
+                  - ecr:UploadLayerPart
+                Resource: 
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}*"
+                  - !Sub "arn:aws:ecr:${AWS::Region}:${AWS::AccountId}:repository/hotel-app"
+              - Effect: Allow
+                Action:
+                  - ssm:PutParameter
+                  - ssm:DeleteParameter
+                  - ssm:AddTagsToResource
+                  - ssm:RemoveTagsFromResource
+                  - ssm:GetParameter
+                Resource:
+                  - !Sub 'arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/*'
+              - Effect: Allow
+                Action:
+                  - kms:Decrypt
+                Resource:
+                  - '*'
+              - Effect: Allow
+                Action:
+                  - codeconnections:GetConnection
+                  - codeconnections:GetConnectionToken
+                Resource: !Sub 'arn:aws:codeconnections:${AWS::Region}:${AWS::AccountId}:connection/*'
+
+  ECRHotelApp:
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W79
+            reason: Warning is not needed for this workshop because this is a temporary lived image storage and is deleted after the workshop has ended. Scope of image scanning is not included in this workshop.
+          - id: W28
+            reason: Warning is not needed for this workshop because only one ECR repository is created.
+    Type: AWS::ECR::Repository
+    Properties:
+      ImageScanningConfiguration:
+        ScanOnPush: false
+      RepositoryName: hotel-app
+      EncryptionConfiguration:
+        EncryptionType: AES256
+      ImageTagMutability: MUTABLE
+
+  CodeBuildBackEndRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /hotelapp/roles/CodeBuildBackEndRoleArn
+      Type: String
+      Value: !GetAtt CodeBuildBackEndRole.Arn
+
+  CodeBuildIntTestRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /hotelapp/roles/CodeBuildIntTestRoleArn
+      Type: String
+      Value: !GetAtt CodeBuildIntTestRole.Arn
+
+  CodePipelineRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /hotelapp/roles/CodePipelineRoleArn
+      Type: String
+      Value: !GetAtt CodePipelineRole.Arn
+
+  CodeBuildFrontEndRoleArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /hotelapp/roles/CodeBuildFrontEndRoleArn
+      Type: String
+      Value: !GetAtt CodeBuildFrontEndRole.Arn
+
+  ECRHotelAppArnParameter:
+    Type: AWS::SSM::Parameter
+    Properties:
+      Name: /hotelapp/ecr/HotelAppRepositoryArn
+      Type: String
+      Value: !GetAtt ECRHotelApp.Arn
